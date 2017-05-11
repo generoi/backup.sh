@@ -58,7 +58,7 @@ if [ -z "$remote" ]; then
 fi
 
 # Unless --skip-db
-if ((!$skip_db)); then
+if ! (($skip_db)); then
   if [ -z "$wp_path" ]; then
     wp_path="/home/www/${customer}/deploy/current/web/wp"
   fi
