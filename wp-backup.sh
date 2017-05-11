@@ -7,6 +7,8 @@
 #   --dir /home/www/foo/deploy/shared/web/app/uploads
 #   --dir /home/www/foo/deploy/shared/web/app/uploads2
 
+[[ $UID -eq 0 ]] && echo "You should not run this script as root, use the deploy user." >&2 && exit 1
+
 TIME="$(date +%Y%m%d_%H%M%S)"
 WP_BIN="${WPCLI_BIN:-/usr/local/bin/wp}"
 RSYNC_BIN="${RSYNC_BIN:-/usr/bin/rsync}"
