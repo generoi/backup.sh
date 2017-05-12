@@ -221,6 +221,7 @@ EOF
   for dir in "${dirs[@]}"; do
     $RSYNC_BIN -aqz -e 'ssh' --delete \
       --exclude '*.webp' \
+      --exclude '*.php' \
       --exclude '*-c-center.jpg' \
       --exclude '*-c-center.png' \
       --exclude '*-c-default.jpg' \
