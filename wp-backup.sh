@@ -219,7 +219,29 @@ EOF
 
   # Backup directories.
   for dir in "${dirs[@]}"; do
-    $RSYNC_BIN -aqz -e 'ssh' --delete "$dir" "$remote:$remote_backup_files_dir/day/$DAY"
+    $RSYNC_BIN -aqz -e 'ssh' --delete \
+      --exclude '*.webp' \
+      --exclude '*-c-center.jpg' \
+      --exclude '*-c-center.png' \
+      --exclude '*-c-default.jpg' \
+      --exclude '*-c-default.png' \
+      --exclude '*-c-1.jpg' \
+      --exclude '*-c-1.png' \
+      --exclude '*-??x??.jpg' \
+      --exclude '*-??x??.png' \
+      --exclude '*-??x???.jpg' \
+      --exclude '*-??x???.png' \
+      --exclude '*-???x??.jpg' \
+      --exclude '*-???x??.png' \
+      --exclude '*-???x???.jpg' \
+      --exclude '*-???x???.png' \
+      --exclude '*-???x????.jpg' \
+      --exclude '*-???x????.png' \
+      --exclude '*-????x???.jpg' \
+      --exclude '*-????x???.png' \
+      --exclude '*-????x????.jpg' \
+      --exclude '*-????x????.png' \
+      -- "$dir" "$remote:$remote_backup_files_dir/day/$DAY"
     rsync_rc=$?
 
     if [[ $rsync_rc -eq 0 ]]; then
