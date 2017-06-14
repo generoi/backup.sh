@@ -163,7 +163,7 @@ if ! (($skip_db)); then
   while [ ! -e $backup_db_file -o ! -s $backup_db_file ] && [[ $tries -lt 3 ]]; do
     $WP_BIN --path="$wp_path" db export - \
       | gzip -f -6 \
-      | openssl smime -encrypt -binary -text -aes256 -out $backup_db_file -outform DER $PUB_KEY \
+      | openssl smime -encrypt -binary -text -aes256 -out $backup_db_file -outform DER $PUB_KEY
     ((tries++))
   done
 
