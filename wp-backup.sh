@@ -153,7 +153,7 @@ if ! (($skip_db)); then
     mkdir -p $TEMP_BACKUP_DIR/db || exit 1
   fi
 
-  backup_db_file=$TEMP_BACKUP_DIR/db/$customer-db-$TIME.sql.gz
+  backup_db_file=$TEMP_BACKUP_DIR/db/$customer-db-$TIME.sql.gz.enc
   remote_backup_db_dir=$REMOTE_BACKUP_DIR/$customer/db
   remote_backup_files_dir=$REMOTE_BACKUP_DIR/$customer/files
 
