@@ -13,17 +13,19 @@
 
 [[ $UID -eq 0 ]] && echo "You should not run this script as root, use the deploy user." >&2 && exit 1
 
-TIME="$(date +%Y%m%d_%H%M%S)"
-WEEK="$(date +%V)"
-MONTH="$(date +%m)"
-DAY="$(date +%u)"
-YESTERDAY="$(date -d 'yesterday' +%u)"
+TIME=$(date +%Y%m%d_%H%M%S)
+WEEK=$(date +%V)
+MONTH=$(date +%m)
+WEEKDAY=$(date +%u)
+DAY=$(date +%d)
+YESTERDAY=$(date -d 'yesterday' +%u)
 
-WP_BIN="${WPCLI_BIN:-/usr/local/bin/wp}"
-RSYNC_BIN="${RSYNC_BIN:-/usr/bin/rsync}"
-BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
-LOGFILE="/tmp/backup.log"
+WP_BIN=${WPCLI_BIN:-/usr/local/bin/wp}
+RSYNC_BIN=${RSYNC_BIN:-/usr/bin/rsync}
+BACKUP_DIR=${BACKUP_DIR:-$HOME/backups}
+LOGFILE=/tmp/backup.log
 LOGFILE_NUM_LINES=1000
+PUB_KEY=~/.ssh/backup.pub.pem
 
 DB_MONTHS_STORED=4
 DB_WEEKS_STORED=4
@@ -44,21 +46,22 @@ log() {
 }
 err() { log "ERROR: $@"; } >&2
 
-remove_expired_backups() {
-  local dir="$1"
-  local count="$2"
-  local remote="$3"
+prune() {
+  local remote=$1
+  local dir=$2
+  local count=$3
 
   # Tail needs this incremented by one.
   ((count++))
 
-  ssh "$remote" "cd $dir; ls -tp | tail -n +$count | xargs -d '\n' rm -rf --;"
+  ssh $remote "cd $dir; ls -tp | tail -n +$count | xargs -d '\n' rm -rf --;"
 }
 
-backup_existing() {
-  local source="$1"
-  local target="$2"
-  ssh "$remote" rsync -aq --delete $source/ $target/
+sync() {
+  local remote=$1
+  local source=$2
+  local target=$3
+  ssh $remote rsync -aq --delete $source/ $target/
 }
 
 args=()
@@ -72,17 +75,17 @@ dirs=()
 # Process and remove all flags.
 while (($#)); do
   case $1 in
-    --wp=*) wp_path="${1#*=}" ;;
-    --wp) shift; wp_path="$1" ;;
+    --wp=*) wp_path=${1#*=} ;;
+    --wp) shift; wp_path=$1 ;;
 
-    --customer=*) customer="${1#*=}" ;;
-    --customer) shift; customer="$1" ;;
+    --customer=*) customer=${1#*=} ;;
+    --customer) shift; customer=$1 ;;
 
-    --remote=*) remote="${1#*=}" ;;
-    --remote) shift; remote="$1" ;;
+    --remote=*) remote=${1#*=} ;;
+    --remote) shift; remote=$1 ;;
 
-    --dir=*) dirs="${1#*=}" ;;
-    --dir) shift; dirs+=("$1") ;;
+    --dir=*) dirs=${1#*=} ;;
+    --dir) shift; dirs+=($1) ;;
 
     --db-months=*) DB_MONTHS_STORED=${1#*=} ;;
     --db-months) shift; DB_MONTHS_STORED=$1 ;;
@@ -101,6 +104,9 @@ while (($#)); do
 
     --files-days=*) FILES_DAYS_STORED=${1#*=} ;;
     --files-days) shift; FILES_DAYS_STORED=$1 ;;
+
+    --public-key=*) PUB_KEY=${1#*=} ;;
+    --public-key) shift; PUB_KEY=$1 ;;
 
     --no-db) skip_db=1 ;;
 
@@ -142,19 +148,21 @@ if ! (($skip_db)); then
   fi
 
 
-  if [ ! -d "$BACKUP_DIR/db" ]; then
+  if [ ! -d $BACKUP_DIR/db ]; then
     mkdir -p $BACKUP_DIR/db || exit 1
   fi
 
-  backup_db_file="$BACKUP_DIR/db/$customer-db-$TIME.sql.gz"
-  remote_backup_db_dir="~/backups/$customer/db"
-  remote_backup_files_dir="~/backups/$customer/files"
+  backup_db_file=$BACKUP_DIR/db/$customer-db-$TIME.sql.gz
+  remote_backup_db_dir=~/backups/$customer/db
+  remote_backup_files_dir=~/backups/$customer/files
 
   # Export database
   tries=0
   # Make 3 attempts to ensure the file exists and isn't empty.
   while [ ! -e $backup_db_file -o ! -s $backup_db_file ] && [[ $tries -lt 3 ]]; do
-    $WP_BIN --path="$wp_path" db export - | gzip -f -6 >| $backup_db_file
+    $WP_BIN --path="$wp_path" db export - \
+      | gzip -f -6 \
+      | openssl smime -encrypt -binary -text -aes256 -out $backup_db_file -outform DER $PUB_KEY \
     ((tries++))
   done
 
@@ -163,30 +171,29 @@ if ! (($skip_db)); then
     exit 1
   fi
 
-  # Daily database backup.
-  log "Daily database backup ($DAY) for $customer. Keeping $DB_DAYS_STORED days."
+  ssh $remote mkdir -p $remote_backup_db_dir/daily/$WEEKDAY
+  ssh $remote mkdir -p $remote_backup_db_dir/weekly/$WEEK
+  ssh $remote mkdir -p $remote_backup_db_dir/monthly/$MONTH
 
-  ssh "$remote" mkdir -p $remote_backup_db_dir/day/$DAY;
-  remove_expired_backups "$remote_backup_db_dir/day" "$DB_DAYS_STORED" "$remote"
-  $RSYNC_BIN -aqz --delete -e 'ssh' "$BACKUP_DIR/db/" "$remote:$remote_backup_db_dir/day/$DAY/"
+  # Daily database backup.
+  log "Daily database backup ($WEEKDAY) for $customer. Keeping $DB_DAYS_STORED days."
+  $RSYNC_BIN -aqz --delete -e 'ssh' $BACKUP_DIR/db/ $remote:$remote_backup_db_dir/daily/$WEEKDAY/
 
   # Weekly database backup.
-  if [ $DB_WEEKS_STORED -ne 0 ]; then
+  if [[ "$DB_WEEKS_STORED" != "0" ]]; then
     log "Weekly database backup ($WEEK) for $customer. Keeping $DB_WEEKS_STORED weeks."
-
-    ssh "$remote" mkdir -p $remote_backup_db_dir/week/$WEEK;
-    remove_expired_backups "$remote_backup_db_dir/week" "$DB_WEEKS_STORED" "$remote"
-    backup_existing "$remote_backup_db_dir/day/$DAY" "$remote_backup_db_dir/week/$WEEK"
+    sync $remote $remote_backup_db_dir/daily/$WEEKDAY $remote_backup_db_dir/weekly/$WEEK
   fi
 
   # Monhtly database backup.
-  if [ $DB_MONTHS_STORED -ne 0 ]; then
+  if [[ "$DB_MONTHS_STORED" != "0" ]]; then
     log "Monthly database backup ($MONTH) for $customer. Keeping $DB_MONTHS_STORED months."
-
-    ssh "$remote" mkdir -p $remote_backup_db_dir/month/$MONTH;
-    remove_expired_backups "$remote_backup_db_dir/month" "$DB_MONTHS_STORED" "$remote"
-    backup_existing "$remote_backup_db_dir/day/$DAY" "$remote_backup_db_dir/month/$MONTH"
+    sync $remote $remote_backup_db_dir/daily/$WEEKDAY $remote_backup_db_dir/monthly/$MONTH
   fi
+
+  prune $remote $remote_backup_db_dir/daily $DB_DAYS_STORED
+  prune $remote $remote_backup_db_dir/weekly $DB_WEEKS_STORED
+  prune $remote $remote_backup_db_dir/monthly $DB_MONTHS_STORED
 
   # Remove local database dump.
   rm -rf $BACKUP_DIR/
@@ -200,49 +207,37 @@ if [ ${#dirs[@]} -ne 0 ]; then
     exit 1
   fi
 
-  # Daily files backup.
-  log "Daily files backup ($DAY) for $customer. Keeping $FILES_DAYS_STORED days."
+  # Re-use yesterday's files.
+  ssh $remote mkdir -p $remote_backup_files_dir/daily
   commands=$(cat <<EOF
-    mkdir -p $remote_backup_files_dir/day;
-
-    # Re-use old files if available.
-    if [ ! -d $remote_backup_files_dir/day/$DAY ] && [ -d $remote_backup_files_dir/day/$YESTERDAY ]; then
-      cp -r $remote_backup_files_dir/day/$YESTERDAY $remote_backup_files_dir/day/$DAY;
-    fi;
-
-    # Ensure the directory exists.
-    mkdir -p $remote_backup_files_dir/day/$DAY;
+    if [ ! -d $remote_backup_files_dir/daily/$WEEKDAY ] && [ -d $remote_backup_files_dir/daily/$YESTERDAY ]; then
+      cp -r $remote_backup_files_dir/daily/$YESTERDAY $remote_backup_files_dir/daily/$WEEKDAY;
+    fi
 EOF
 )
-  ssh "$remote" "$commands"
-  remove_expired_backups "$remote_backup_files_dir/day" "$FILES_DAYS_STORED" "$remote"
+  ssh $remote "$commands"
+  ssh $remote mkdir -p $remote_backup_files_dir/daily/$WEEKDAY
+  ssh $remote mkdir -p $remote_backup_files_dir/weekly/$WEEK
+  ssh $remote mkdir -p $remote_backup_files_dir/monthly/$MONTH
 
+  # Daily files backup.
+  log "Daily files backup ($WEEKDAY) for $customer. Keeping $FILES_DAYS_STORED days."
   # Backup directories.
   for dir in "${dirs[@]}"; do
     $RSYNC_BIN -aqz -e 'ssh' --delete \
       --exclude '*.webp' \
       --exclude '*.php' \
-      --exclude '*-c-center.jpg' \
-      --exclude '*-c-center.png' \
-      --exclude '*-c-default.jpg' \
-      --exclude '*-c-default.png' \
-      --exclude '*-c-1.jpg' \
-      --exclude '*-c-1.png' \
-      --exclude '*-??x??.jpg' \
-      --exclude '*-??x??.png' \
-      --exclude '*-??x???.jpg' \
-      --exclude '*-??x???.png' \
-      --exclude '*-???x??.jpg' \
-      --exclude '*-???x??.png' \
-      --exclude '*-???x???.jpg' \
-      --exclude '*-???x???.png' \
-      --exclude '*-???x????.jpg' \
-      --exclude '*-???x????.png' \
-      --exclude '*-????x???.jpg' \
-      --exclude '*-????x???.png' \
-      --exclude '*-????x????.jpg' \
-      --exclude '*-????x????.png' \
-      -- "$dir" "$remote:$remote_backup_files_dir/day/$DAY"
+      --exclude '*-c-center.jpg'  --exclude '*-c-center.png' \
+      --exclude '*-c-default.jpg' --exclude '*-c-default.png' \
+      --exclude '*-c-1.jpg'       --exclude '*-c-1.png' \
+      --exclude '*-??x??.jpg'     --exclude '*-??x??.png' \
+      --exclude '*-??x???.jpg'    --exclude '*-??x???.png' \
+      --exclude '*-???x??.jpg'    --exclude '*-???x??.png' \
+      --exclude '*-???x???.jpg'   --exclude '*-???x???.png' \
+      --exclude '*-???x????.jpg'  --exclude '*-???x????.png' \
+      --exclude '*-????x???.jpg'  --exclude '*-????x???.png' \
+      --exclude '*-????x????.jpg' --exclude '*-????x????.png' \
+      -- "$dir" "$remote:$remote_backup_files_dir/daily/$WEEKDAY"
     rsync_rc=$?
 
     if [[ $rsync_rc -eq 0 ]]; then
@@ -255,16 +250,17 @@ EOF
   # Weekly files backup.
   if [ $FILES_WEEKS_STORED -ne 0 ]; then
     log "Weekly files backup ($WEEK) for $customer. Keeping $FILES_WEEKS_STORED weeks."
-    ssh "$remote" mkdir -p $remote_backup_files_dir/week/$WEEK;
-    remove_expired_backups "$remote_backup_files_dir/week" "$FILES_WEEKS_STORED" "$remote"
-    backup_existing "$remote_backup_files_dir/day/$DAY" "$remote_backup_files_dir/week/$WEEK"
+    sync $remote $remote_backup_files_dir/daily/$WEEKDAY $remote_backup_files_dir/weekly/$WEEK
   fi
 
   # Monthly files backup.
   if [ $FILES_MONTHS_STORED -ne 0 ]; then
     log "Monthly files backup ($MONTH) for $customer. Keeping $FILES_MONTHS_STORED months."
-    ssh "$remote" mkdir -p $remote_backup_files_dir/month/$MONTH;
-    remove_expired_backups "$remote_backup_files_dir/month" "$FILES_MONTHS_STORED" "$remote"
-    backup_existing "$remote_backup_files_dir/day/$DAY" "$remote_backup_files_dir/month/$MONTH"
+    sync $remote $remote_backup_files_dir/daily/$WEEKDAY $remote_backup_files_dir/monthly/$MONTH
   fi
+
+  prune $remote $remote_backup_files_dir/daily $FILES_DAYS_STORED
+  prune $remote $remote_backup_files_dir/weekly $FILES_WEEKS_STORED
+  prune $remote $remote_backup_files_dir/monthly $FILES_MONTHS_STORED
+
 fi
