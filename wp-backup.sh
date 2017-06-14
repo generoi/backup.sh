@@ -22,7 +22,8 @@ YESTERDAY=$(date -d 'yesterday' +%u)
 
 WP_BIN=${WPCLI_BIN:-/usr/local/bin/wp}
 RSYNC_BIN=${RSYNC_BIN:-/usr/bin/rsync}
-BACKUP_DIR=${BACKUP_DIR:-$HOME/backups}
+TEMP_BACKUP_DIR=${TEMP_BACKUP_DIR:-$HOME/backups}
+REMOTE_BACKUP_DIR=${REMOTE_BACKUP_DIR:-~/backups}
 LOGFILE=/tmp/backup.log
 LOGFILE_NUM_LINES=1000
 PUB_KEY=~/.ssh/backup.pub.pem
@@ -148,13 +149,13 @@ if ! (($skip_db)); then
   fi
 
 
-  if [ ! -d $BACKUP_DIR/db ]; then
-    mkdir -p $BACKUP_DIR/db || exit 1
+  if [ ! -d $TEMP_BACKUP_DIR/db ]; then
+    mkdir -p $TEMP_BACKUP_DIR/db || exit 1
   fi
 
-  backup_db_file=$BACKUP_DIR/db/$customer-db-$TIME.sql.gz
-  remote_backup_db_dir=~/backups/$customer/db
-  remote_backup_files_dir=~/backups/$customer/files
+  backup_db_file=$TEMP_BACKUP_DIR/db/$customer-db-$TIME.sql.gz
+  remote_backup_db_dir=$REMOTE_BACKUP_DIR/$customer/db
+  remote_backup_files_dir=$REMOTE_BACKUP_DIR/$customer/files
 
   # Export database
   tries=0
@@ -177,7 +178,7 @@ if ! (($skip_db)); then
 
   # Daily database backup.
   log "Daily database backup ($WEEKDAY) for $customer. Keeping $DB_DAYS_STORED days."
-  $RSYNC_BIN -aqz --delete -e 'ssh' $BACKUP_DIR/db/ $remote:$remote_backup_db_dir/daily/$WEEKDAY/
+  $RSYNC_BIN -aqz --delete -e 'ssh' $TEMP_BACKUP_DIR/db/ $remote:$remote_backup_db_dir/daily/$WEEKDAY/
 
   # Weekly database backup.
   if [[ "$DB_WEEKS_STORED" != "0" ]]; then
@@ -196,7 +197,7 @@ if ! (($skip_db)); then
   prune $remote $remote_backup_db_dir/monthly $DB_MONTHS_STORED
 
   # Remove local database dump.
-  rm -rf $BACKUP_DIR/
+  rm -rf $TEMP_BACKUP_DIR/
 fi
 
 # If one or multiple --dir
