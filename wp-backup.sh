@@ -3,7 +3,7 @@
 # backup.sh \
 #   --wp /home/www/foo/deploy/current/web/wp \
 #   --customer foo \
-#   --remote minasithil.genero.fi \
+#   --remote backup.genero.fi \
 #   --db-days 30
 #   --files-months 3
 #   --files-weeks 3
@@ -23,7 +23,7 @@ YESTERDAY=$(date -d 'yesterday' +%u)
 WP_BIN=${WPCLI_BIN:-/usr/local/bin/wp}
 RSYNC_BIN=${RSYNC_BIN:-/usr/bin/rsync}
 TEMP_BACKUP_DIR=${TEMP_BACKUP_DIR:-$HOME/backups}
-REMOTE_BACKUP_DIR=${REMOTE_BACKUP_DIR:-~/backups}
+REMOTE_BACKUP_DIR=${REMOTE_BACKUP_DIR:-/var/www/backup}
 LOGFILE=/tmp/backup.log
 LOGFILE_NUM_LINES=1000
 PUB_KEY=~/.ssh/backup.pub.pem
