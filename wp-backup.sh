@@ -225,7 +225,7 @@ EOF
   log "Daily files backup ($WEEKDAY) for $customer. Keeping $FILES_DAYS_STORED days."
   # Backup directories.
   for dir in "${dirs[@]}"; do
-    $RSYNC_BIN -aqz -e 'ssh' --delete \
+    $RSYNC_BIN -aqz -e 'ssh' --no-perms --no-owner --no-group --delete \
       --exclude '*.webp' \
       --exclude '*.php' \
       --exclude '*-c-center.jpg'  --exclude '*-c-center.png' \
@@ -238,6 +238,7 @@ EOF
       --exclude '*-???x????.jpg'  --exclude '*-???x????.png' \
       --exclude '*-????x???.jpg'  --exclude '*-????x???.png' \
       --exclude '*-????x????.jpg' --exclude '*-????x????.png' \
+      --prune-empty-dirs \
       -- "$dir" "$remote:$remote_backup_files_dir/daily/$WEEKDAY"
     rsync_rc=$?
 
